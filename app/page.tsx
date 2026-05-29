@@ -652,7 +652,11 @@ const readImageWithTesseract = async (file: File) => {
           action: result?.task?.action || "Datei prüfen",
           completed: false,
           note: "Aus Datei/Kamera erstellt.",
-          fileName: file.name,
+          fileName: file.type.startsWith("image/")
+  ? "Foto / Brief"
+  : file.name.length > 26
+    ? file.name.slice(0, 26) + "..."
+    : file.name,
           fileType: file.type,
           analysisNote: result?.note || "Datei wurde analysiert.",
          extractedText: result?.extractedText || ocrText || "",
