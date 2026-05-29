@@ -1147,11 +1147,13 @@ const readImageWithTesseract = async (file: File) => {
                       )}
 
                       <div>
-                        <h3 className="text-xl font-bold">{file.name}</h3>
+                        <h3 className="text-xl font-bold break-words">
+  {file.name.length > 26 ? file.name.slice(0, 26) + "..." : file.name}
+</h3>
                         <p className="text-zinc-400">{file.type}</p>
-                        <p className="text-zinc-500">
-                          {formatFileSize(file.size)}
-                        </p>
+                        <p className="text-zinc-500 text-sm break-words">
+  {formatFileSize(file.size)}
+</p>
                       </div>
                     </div>
 
