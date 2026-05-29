@@ -639,7 +639,7 @@ const readImageWithTesseract = async (file: File) => {
 
         generatedTasks.push({
           id: Date.now() + Math.random(),
-          title: result?.task?.title || `Datei prüfen: ${file.name}`,
+          title: result?.task?.title || `Datei prüfen: ${file.name.slice(0, 18)}...`,
           project: result?.task?.project || "Inbox",
           priority: result?.task?.priority || "Normal",
           date: result?.task?.date || "Kein Datum",
@@ -658,7 +658,7 @@ const readImageWithTesseract = async (file: File) => {
       } catch {
         generatedTasks.push({
           id: Date.now() + Math.random(),
-          title: `Datei prüfen: ${file.name}`,
+          title: `Datei prüfen: ${file.name.slice(0, 18)}...`,
           project: "Inbox",
           priority: "Normal",
           date: "Kein Datum",
@@ -1493,7 +1493,7 @@ const readImageWithTesseract = async (file: File) => {
 
                                     {task.fileName && (
   <p className="break-words text-sm md:text-base">
-    Datei: {task.fileName.length > 28 ? task.fileName.slice(0, 28) + "..." : task.fileName}
+    Datei: {task.fileName.length > 24 ? task.fileName.slice(0, 24) + "..." : task.fileName}
   </p>
 )}
 
