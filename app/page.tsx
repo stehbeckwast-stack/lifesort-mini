@@ -597,9 +597,12 @@ const readImageWithTesseract = async (file: File) => {
     await worker.terminate();
 
     return result.data.text || "";
-  } catch {
-    return "";
-  }
+  } catch (error) {
+  console.error("OCR Fehler:", error);
+  setAnalysisStatus("OCR konnte das Bild nicht auslesen.");
+
+  return "";
+}
 };
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;

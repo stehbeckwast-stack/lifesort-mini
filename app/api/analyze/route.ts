@@ -1,108 +1,86 @@
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import * as pdfParse from "pdf-parse";
 
-export const runtime = "nodejs";
-
-function findDate(text: string) {
+function detectDate(text: string) {
   const fullDate = text.match(/\b\d{1,2}\.\d{1,2}\.\d{4}\b/);
   if (fullDate) return fullDate[0];
 
   const shortDate = text.match(/\b\d{1,2}\.\d{1,2}\b/);
   if (shortDate) return shortDate[0];
 
-  const lower = text.toLowerCase();
-
-  if (lower.includes("heute")) return "Heute";
-  if (lower.includes("morgen")) return "Morgen";
-  if (lower.includes("montag")) return "Montag";
-  if (lower.includes("dienstag")) return "Dienstag";
-  if (lower.includes("mittwoch")) return "Mittwoch";
-  if (lower.includes("donnerstag")) return "Donnerstag";
-  if (lower.includes("freitag")) return "Freitag";
-  if (lower.includes("samstag")) return "Samstag";
-  if (lower.includes("sonntag")) return "Sonntag";
+  if (/heute/i.test(text)) return "Heute";
+  if (/morgen/i.test(text)) return "Morgen";
 
   return "Kein Datum";
 }
 
-function findTime(text: string) {
-  const time = text.match(/\b([0-2]?\d[:.]?\d{0,2})\s*uhr\b/i);
-  if (!time) return "Keine Uhrzeit";
-
-  return `${time[1].replace(".", ":")} Uhr`;
+function detectAmount(text: string) {
+  const amount = text.match(/\b\d{1,4}[,.]\d{2}\s?€\b/);
+  return amount ? amount[0] : "";
 }
 
-function findLocation(text: string) {
-  const knownLocations = [
-    "Dorfen",
-    "Schwindegg",
-    "Wasentegernbach",
-    "Boldenkow",
-    "Kreta",
-    "Erding",
-    "München",
-    "Pleiskirchen",
-    "Walpertskirchen",
-    "Landshut",
-    "Mühldorf",
-    "Altötting",
-    "Taufkirchen",
-    "Bergham",
-    "Daheim",
-    "Vilsbiburg",
-  ];
+function detectCompany(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  for (const loc of knownLocations) {
-    if (text.toLowerCase().includes(loc.toLowerCase())) return loc;
-  }
+  const companyLine = lines.find((line) =>
+    /(gmbh|ag|kg|ug|firma|rechnung|kanzlei|praxis|service|handel|bau|holz)/i.test(
+      line
+    )
+  );
 
-  const pattern = text.match(/\b(?:in|nach|bei|auf)\s+([A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ-]+)/);
-  if (pattern?.[1]) return pattern[1];
-
-  return "Kein Ort";
+  return companyLine || "Keine Firma";
 }
 
-function findAction(text: string) {
+function detectAction(text: string) {
   const lower = text.toLowerCase();
 
   if (lower.includes("rechnung")) return "Rechnung prüfen";
+  if (lower.includes("mahnung")) return "Mahnung prüfen";
   if (lower.includes("angebot")) return "Angebot prüfen";
-  if (lower.includes("baustelle")) return "Baustelle prüfen";
-  if (lower.includes("termin")) return "Termin";
-  if (lower.includes("anrufen") || lower.includes("rückruf")) return "Telefonat";
-  if (lower.includes("zahlung") || lower.includes("bezahlen")) return "Zahlung";
-  if (lower.includes("brief")) return "Brief prüfen";
+  if (lower.includes("termin")) return "Termin prüfen";
+  if (lower.includes("vertrag")) return "Vertrag prüfen";
+  if (lower.includes("bescheid")) return "Bescheid prüfen";
 
-  return "Datei prüfen";
+  return "Dokument prüfen";
 }
 
-function findProject(text: string, action: string) {
+function detectProject(text: string) {
   const lower = text.toLowerCase();
 
-  if (lower.includes("rechnung") || lower.includes("angebot") || lower.includes("zahlung")) {
-    return "Büro";
+  if (
+    lower.includes("rechnung") ||
+    lower.includes("betrag") ||
+    lower.includes("zahlung") ||
+    lower.includes("iban")
+  ) {
+    return "Finanzen";
   }
 
-  if (lower.includes("baustelle") || lower.includes("haus")) {
-    return "Haus";
+  if (
+    lower.includes("vertrag") ||
+    lower.includes("bescheid") ||
+    lower.includes("versicherung")
+  ) {
+    return "Dokumente";
   }
 
-  if (lower.includes("arzt") || lower.includes("urlaub") || lower.includes("privat")) {
-    return "Privat";
+  if (lower.includes("termin") || lower.includes("datum")) {
+    return "Termine";
   }
-
-  if (action === "Rechnung prüfen") return "Büro";
 
   return "Inbox";
 }
 
-function findPriority(text: string) {
+function detectPriority(text: string) {
   const lower = text.toLowerCase();
 
   if (
-    lower.includes("dringend") ||
     lower.includes("mahnung") ||
-    lower.includes("fällig") ||
+    lower.includes("frist") ||
+    lower.includes("dringend") ||
     lower.includes("sofort")
   ) {
     return "Hoch";
@@ -110,9 +88,8 @@ function findPriority(text: string) {
 
   if (
     lower.includes("rechnung") ||
-    lower.includes("termin") ||
-    lower.includes("zahlbar") ||
-    lower.includes("bis")
+    lower.includes("zahlung") ||
+    lower.includes("termin")
   ) {
     return "Mittel";
   }
@@ -120,10 +97,36 @@ function findPriority(text: string) {
   return "Normal";
 }
 
+function createTitle(text: string, fileName: string, fileType: string) {
+  const action = detectAction(text);
+  const company = detectCompany(text);
+  const amount = detectAmount(text);
+
+  if (text.trim().length > 20) {
+    if (company !== "Keine Firma" && amount) {
+      return `${action}: ${company} (${amount})`;
+    }
+
+    if (company !== "Keine Firma") {
+      return `${action}: ${company}`;
+    }
+
+    return action;
+  }
+
+  if (fileType.startsWith("image/")) return "Foto / Brief prüfen";
+
+  return `Datei prüfen: ${
+    fileName.length > 24 ? fileName.slice(0, 24) + "..." : fileName
+  }`;
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
+
     const file = formData.get("file") as File | null;
+    const ocrText = String(formData.get("ocrText") || "");
 
     if (!file) {
       return NextResponse.json(
@@ -132,67 +135,40 @@ export async function POST(request: Request) {
       );
     }
 
-    let extractedText = "";
-    const fileName = file.name;
-    const lowerName = fileName.toLowerCase();
+    let extractedText = ocrText;
 
-    if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
+    if (file.type === "application/pdf") {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const parser = new PDFParse({ data: buffer });
-const pdfData = await parser.getText();
-extractedText = pdfData.text || "";
-await parser.destroy();
+      const result = await (pdfParse as any)(buffer);
+      extractedText = result.text || "";
     }
 
-    const analysisBase = `${fileName}\n${extractedText}`;
-    const action = findAction(analysisBase);
-    const project = findProject(analysisBase, action);
-    const priority = findPriority(analysisBase);
-    const date = findDate(analysisBase);
-    const time = findTime(analysisBase);
-    const location = findLocation(analysisBase);
-
-    let title = `Datei prüfen: ${fileName}`;
-
-    if (action === "Rechnung prüfen") {
-      title = `Rechnung prüfen: ${fileName}`;
-    }
-
-    if (action === "Zahlung") {
-      title = `Zahlung prüfen: ${fileName}`;
-    }
-
-    if (action === "Termin") {
-      title = `Termin aus Datei prüfen: ${fileName}`;
-    }
-
-    if (action === "Baustelle prüfen") {
-      title = `Baustellenunterlage prüfen: ${fileName}`;
-    }
+    const task = {
+      title: createTitle(extractedText, file.name, file.type),
+      project: detectProject(extractedText),
+      priority: detectPriority(extractedText),
+      date: detectDate(extractedText),
+      time: "Keine Uhrzeit",
+      person: "Keine Person",
+      company: detectCompany(extractedText),
+      location: "Kein Ort",
+      action: detectAction(extractedText),
+    };
 
     return NextResponse.json({
-      task: {
-        title,
-        project,
-        priority,
-        date,
-        time,
-        person: "Keine Person",
-        company: "Keine Firma",
-        location,
-        action,
-      },
-      extractedText: extractedText.slice(0, 2000),
-      note: extractedText
-        ? "PDF wurde ausgelesen und analysiert."
-        : "Datei wurde empfangen. Für Bilder ist OCR noch nicht aktiviert.",
+      task,
+      extractedText,
+      note:
+        extractedText.trim().length > 20
+          ? "Dokument wurde per OCR/Textanalyse ausgewertet."
+          : "Datei empfangen, aber kein verwertbarer Text erkannt.",
     });
   } catch (error) {
     return NextResponse.json(
       {
         error: "Analyse fehlgeschlagen.",
-        details: String(error),
+        detail: String(error),
       },
       { status: 500 }
     );
