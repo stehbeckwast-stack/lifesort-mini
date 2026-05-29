@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-
+import { createWorker } from "tesseract.js";
 type Task = {
   id: number;
   title: string;
@@ -498,6 +498,7 @@ export default function Home() {
     link.click();
 
     URL.revokeObjectURL(url);
+    setStatusText("Kalendereintrag wurde erstellt. Prüfe Downloads oder Kalender-App.");
   };
 
   const handleAnalyze = () => {
@@ -583,7 +584,23 @@ export default function Home() {
 
     setNewProject("");
   };
+const readImageWithTesseract = async (file: File) => {
+  if (!file.type.startsWith("image/")) return "";
 
+  try {
+    setAnalysisStatus("Bild wird mit OCR ausgelesen...");
+
+    const worker = await createWorker("deu");
+
+    const result = await worker.recognize(file);
+
+    await worker.terminate();
+
+    return result.data.text || "";
+  } catch {
+    return "";
+  }
+};
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
@@ -606,16 +623,19 @@ export default function Home() {
     const generatedTasks: Task[] = [];
 
     for (const file of fileArray) {
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
+  try {
+    const ocrText = await readImageWithTesseract(file);
 
-        const response = await fetch("/api/analyze", {
-          method: "POST",
-          body: formData,
-        });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("ocrText", ocrText);
 
-        const result = await response.json();
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
 
         generatedTasks.push({
           id: Date.now() + Math.random(),
@@ -633,7 +653,7 @@ export default function Home() {
           fileName: file.name,
           fileType: file.type,
           analysisNote: result?.note || "Datei wurde analysiert.",
-          extractedText: result?.extractedText || "",
+         extractedText: result?.extractedText || ocrText || "",
         });
       } catch {
         generatedTasks.push({
@@ -1443,7 +1463,7 @@ export default function Home() {
                                 ) : (
                                   <>
                                     <h3
-                                      className={`text-2xl md:text-3xl font-bold ${
+                                      className={`text-2xl md:text-3xl font-bold break-words overflow-hidden ${
                                         task.completed
                                           ? "line-through text-zinc-500"
                                           : ""
@@ -1472,8 +1492,10 @@ export default function Home() {
                                     {task.note && <p>Notiz: {task.note}</p>}
 
                                     {task.fileName && (
-                                      <p>Datei: {task.fileName}</p>
-                                    )}
+  <p className="break-words text-sm md:text-base">
+    Datei: {task.fileName.length > 28 ? task.fileName.slice(0, 28) + "..." : task.fileName}
+  </p>
+)}
 
                                     {task.analysisNote && (
                                       <p className="text-blue-300">
