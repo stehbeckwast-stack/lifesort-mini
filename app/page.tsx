@@ -609,14 +609,18 @@ const readImageWithTesseract = async (file: File) => {
     const fileArray = Array.from(files);
 
     const newFiles: UploadedFile[] = fileArray.map((file) => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      type: file.type || "Unbekannt",
-      size: file.size,
-      previewUrl: file.type.startsWith("image/")
-        ? URL.createObjectURL(file)
-        : undefined,
-    }));
+  id: Date.now() + Math.random(),
+  name: file.type.startsWith("image/")
+    ? "Foto / Brief"
+    : file.name.length > 26
+      ? file.name.slice(0, 26) + "..."
+      : file.name,
+  type: file.type || "Unbekannt",
+  size: file.size,
+  previewUrl: file.type.startsWith("image/")
+    ? URL.createObjectURL(file)
+    : undefined,
+}));
 
     setUploadedFiles((prev) => [...newFiles, ...prev]);
 
