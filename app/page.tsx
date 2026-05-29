@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Task = {
   id: number;
@@ -14,6 +14,7 @@ type Task = {
   location: string;
   action: string;
   completed: boolean;
+  note?: string;
   fileName?: string;
   fileType?: string;
   analysisNote?: string;
@@ -28,7 +29,7 @@ type UploadedFile = {
   previewUrl?: string;
 };
 
-type ActivePanel = "quick" | "manual" | "files" | "tasks";
+type ActivePanel = "dashboard" | "quick" | "manual" | "files" | "calendar" | "tasks";
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -39,11 +40,17 @@ export default function Home() {
   const [quickFilter, setQuickFilter] = useState("Alle");
   const [analysisStatus, setAnalysisStatus] = useState("");
   const [statusText, setStatusText] = useState("Bereit.");
-
-  const [activePanel, setActivePanel] = useState<ActivePanel>("quick");
+  const [activePanel, setActivePanel] = useState<ActivePanel>("dashboard");
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editProject, setEditProject] = useState("");
+  const [editPriority, setEditPriority] = useState("");
+  const [editPerson, setEditPerson] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editNote, setEditNote] = useState("");
 
   const [customProjects, setCustomProjects] = useState<string[]>([
     "Inbox",
@@ -61,8 +68,10 @@ export default function Home() {
   const [manualPerson, setManualPerson] = useState("");
   const [manualCompany, setManualCompany] = useState("");
   const [manualLocation, setManualLocation] = useState("");
+  const [manualNote, setManualNote] = useState("");
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const weekdayWords = [
     "Montag",
@@ -76,11 +85,10 @@ export default function Home() {
 
   useEffect(() => {
     const saved =
+      localStorage.getItem("lifesort-v12") ||
       localStorage.getItem("lifesort-v11") ||
       localStorage.getItem("lifesort-v10.3") ||
-      localStorage.getItem("lifesort-v10.2") ||
-      localStorage.getItem("lifesort-v10.1") ||
-      localStorage.getItem("lifesort-v10");
+      localStorage.getItem("lifesort-v10.2");
 
     const savedProjects = localStorage.getItem("lifesort-projects");
     const savedFiles = localStorage.getItem("lifesort-files");
@@ -88,10 +96,16 @@ export default function Home() {
     if (saved) setTasks(JSON.parse(saved));
     if (savedProjects) setCustomProjects(JSON.parse(savedProjects));
     if (savedFiles) setUploadedFiles(JSON.parse(savedFiles));
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        setStatusText("Service Worker konnte nicht registriert werden.");
+      });
+    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("lifesort-v11", JSON.stringify(tasks));
+    localStorage.setItem("lifesort-v12", JSON.stringify(tasks));
   }, [tasks]);
 
   useEffect(() => {
@@ -101,6 +115,26 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("lifesort-files", JSON.stringify(uploadedFiles));
   }, [uploadedFiles]);
+
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      setStatusText("Benachrichtigungen werden auf diesem Gerät nicht unterstützt.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission === "granted") {
+      setStatusText("Push-Berechtigung erteilt.");
+
+      new Notification("LifeSort ist bereit", {
+        body: "Benachrichtigungen funktionieren auf diesem Gerät.",
+        icon: "/icons/lifesort-icon-192.png",
+      });
+    } else {
+      setStatusText("Benachrichtigungen wurden nicht erlaubt.");
+    }
+  };
 
   const normalizeInput = (text: string) => {
     return text
@@ -198,8 +232,7 @@ export default function Home() {
 
     return "Kein Ort";
   };
-
-  const detectPerson = (text: string, location: string) => {
+    const detectPerson = (text: string, location: string) => {
     const lower = text.toLowerCase();
 
     const blocked = [
@@ -343,6 +376,7 @@ export default function Home() {
       location,
       action,
       completed: false,
+      note: "",
     };
   };
 
@@ -406,7 +440,8 @@ export default function Home() {
 
     return date;
   };
-    const formatICSDate = (date: Date) => {
+
+  const formatICSDate = (date: Date) => {
     const pad = (value: number) => String(value).padStart(2, "0");
 
     return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(
@@ -430,7 +465,7 @@ export default function Home() {
       `UID:${task.id}@lifesort-mini`,
       `SUMMARY:${cleanTitle}`,
       `LOCATION:${cleanLocation}`,
-      `DESCRIPTION:Projekt: ${task.project}\\nKontakt: ${task.person}\\nAktion: ${task.action}`,
+      `DESCRIPTION:Projekt: ${task.project}\\nKontakt: ${task.person}\\nAktion: ${task.action}\\nNotiz: ${task.note || ""}`,
       `DTSTART:${formatICSDate(start)}`,
       `DTEND:${formatICSDate(end)}`,
       "END:VEVENT",
@@ -494,10 +529,6 @@ export default function Home() {
 
     setStatusText(`${newTasks.length} Aufgabe(n) erstellt.`);
     setActivePanel("tasks");
-
-    setTimeout(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    }, 100);
   };
 
   const handleManualAdd = () => {
@@ -518,6 +549,7 @@ export default function Home() {
       location: manualLocation || "Kein Ort",
       action: "Manuell",
       completed: false,
+      note: manualNote,
     };
 
     setTasks((prev) => [newTask, ...prev]);
@@ -533,13 +565,10 @@ export default function Home() {
     setManualPerson("");
     setManualCompany("");
     setManualLocation("");
+    setManualNote("");
 
     setStatusText("Manuelle Aufgabe erstellt.");
     setActivePanel("tasks");
-
-    setTimeout(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    }, 100);
   };
 
   const handleCreateProject = () => {
@@ -588,44 +617,24 @@ export default function Home() {
 
         const result = await response.json();
 
-        if (result?.task) {
-          generatedTasks.push({
-            id: Date.now() + Math.random(),
-            title: result.task.title || `Datei prüfen: ${file.name}`,
-            project: result.task.project || "Inbox",
-            priority: result.task.priority || "Normal",
-            date: result.task.date || "Kein Datum",
-            time: result.task.time || "Keine Uhrzeit",
-            person: result.task.person || "Keine Person",
-            company: result.task.company || "Keine Firma",
-            location: result.task.location || "Kein Ort",
-            action: result.task.action || "Datei prüfen",
-            completed: false,
-            fileName: file.name,
-            fileType: file.type,
-            analysisNote: result.note || "Datei wurde analysiert.",
-            extractedText: result.extractedText || "",
-          });
-        } else {
-          generatedTasks.push({
-            id: Date.now() + Math.random(),
-            title: `Datei prüfen: ${file.name}`,
-            project: "Inbox",
-            priority: "Normal",
-            date: "Kein Datum",
-            time: "Keine Uhrzeit",
-            person: "Keine Person",
-            company: "Keine Firma",
-            location: "Kein Ort",
-            action: "Datei prüfen",
-            completed: false,
-            fileName: file.name,
-            fileType: file.type,
-            analysisNote:
-              "Analyse-API hat keine Aufgabe zurückgegeben. Standardaufgabe erstellt.",
-            extractedText: result?.extractedText || "",
-          });
-        }
+        generatedTasks.push({
+          id: Date.now() + Math.random(),
+          title: result?.task?.title || `Datei prüfen: ${file.name}`,
+          project: result?.task?.project || "Inbox",
+          priority: result?.task?.priority || "Normal",
+          date: result?.task?.date || "Kein Datum",
+          time: result?.task?.time || "Keine Uhrzeit",
+          person: result?.task?.person || "Keine Person",
+          company: result?.task?.company || "Keine Firma",
+          location: result?.task?.location || "Kein Ort",
+          action: result?.task?.action || "Datei prüfen",
+          completed: false,
+          note: "Aus Datei/Kamera erstellt.",
+          fileName: file.name,
+          fileType: file.type,
+          analysisNote: result?.note || "Datei wurde analysiert.",
+          extractedText: result?.extractedText || "",
+        });
       } catch {
         generatedTasks.push({
           id: Date.now() + Math.random(),
@@ -639,6 +648,7 @@ export default function Home() {
           location: "Kein Ort",
           action: "Datei prüfen",
           completed: false,
+          note: "Analyse nicht möglich.",
           fileName: file.name,
           fileType: file.type,
           analysisNote: "Analyse nicht möglich. Standardaufgabe erstellt.",
@@ -650,17 +660,12 @@ export default function Home() {
     setTasks((prev) => [...generatedTasks, ...prev]);
 
     setAnalysisStatus(
-      `${generatedTasks.length} Aufgabe(n) aus Datei(en) erstellt.`
+      `${generatedTasks.length} Aufgabe(n) aus Datei/Kamera erstellt.`
     );
 
     setActivePanel("tasks");
-
-    setTimeout(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    }, 100);
   };
-
-  const deleteUploadedFile = (id: number) => {
+    const deleteUploadedFile = (id: number) => {
     setUploadedFiles((prev) => prev.filter((file) => file.id !== id));
   };
 
@@ -679,36 +684,49 @@ export default function Home() {
   const startEdit = (task: Task) => {
     setEditingId(task.id);
     setEditTitle(task.title);
+    setEditDate(task.date);
+    setEditTime(task.time);
+    setEditProject(task.project);
+    setEditPriority(task.priority);
+    setEditPerson(task.person);
+    setEditLocation(task.location);
+    setEditNote(task.note || "");
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditTitle("");
+    setEditDate("");
+    setEditTime("");
+    setEditProject("");
+    setEditPriority("");
+    setEditPerson("");
+    setEditLocation("");
+    setEditNote("");
   };
 
   const saveEdit = (id: number) => {
     if (!editTitle.trim()) return;
 
-    const parsed = parseTask(editTitle);
-
     setTasks((prev) =>
       prev.map((task) =>
         task.id === id
           ? {
-              ...parsed,
-              id: task.id,
-              completed: task.completed,
-              fileName: task.fileName,
-              fileType: task.fileType,
-              analysisNote: task.analysisNote,
-              extractedText: task.extractedText,
+              ...task,
+              title: editTitle,
+              date: editDate,
+              time: editTime,
+              project: editProject,
+              priority: editPriority,
+              person: editPerson,
+              location: editLocation,
+              note: editNote,
             }
           : task
       )
     );
 
-    setEditingId(null);
-    setEditTitle("");
+    cancelEdit();
   };
 
   const projects = [
@@ -731,6 +749,7 @@ export default function Home() {
       task.company.toLowerCase().includes(searchLower) ||
       task.location.toLowerCase().includes(searchLower) ||
       task.action.toLowerCase().includes(searchLower) ||
+      (task.note || "").toLowerCase().includes(searchLower) ||
       (task.fileName || "").toLowerCase().includes(searchLower)
     );
   });
@@ -816,21 +835,39 @@ export default function Home() {
       ? "bg-white text-black"
       : "bg-zinc-800 text-white";
 
+  const openPanel = (panel: ActivePanel) => {
+    setActivePanel(panel);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const todayCount = tasks.filter((task) => getTimeGroup(task) === "Heute").length;
+  const tomorrowCount = tasks.filter((task) => getTimeGroup(task) === "Morgen").length;
+  const openCount = tasks.filter((task) => !task.completed).length;
+  const fileCount = tasks.filter((task) => task.fileName).length;
+
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-10 pb-28">
+    <main className="min-h-screen bg-black text-white p-4 md:p-10 pb-32">
       <div className="max-w-5xl mx-auto space-y-6 md:space-y-8">
         <div>
-          <h1 className="text-4xl md:text-6xl font-bold">LifeSort Mini V11</h1>
+          <h1 className="text-4xl md:text-6xl font-bold">LifeSort Mini V12</h1>
           <p className="text-zinc-400 mt-2">
-            Stabile mobile Produktversion mit besserer Sortierung und Speicherung.
+            Kamera, Push-Test, Kalenderbereich und kompaktere Navigation.
           </p>
         </div>
 
         <div className="sticky top-0 z-20 bg-black/90 backdrop-blur py-3">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
             <button
               type="button"
-              onClick={() => setActivePanel("quick")}
+              onClick={() => openPanel("dashboard")}
+              className={`${navButtonClass("dashboard")} rounded-2xl py-3 font-semibold`}
+            >
+              Übersicht
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openPanel("quick")}
               className={`${navButtonClass("quick")} rounded-2xl py-3 font-semibold`}
             >
               Schnell
@@ -838,7 +875,7 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => setActivePanel("manual")}
+              onClick={() => openPanel("manual")}
               className={`${navButtonClass("manual")} rounded-2xl py-3 font-semibold`}
             >
               Manuell
@@ -846,21 +883,108 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => setActivePanel("files")}
+              onClick={() => openPanel("files")}
               className={`${navButtonClass("files")} rounded-2xl py-3 font-semibold`}
             >
-              Dateien
+              Kamera
             </button>
 
             <button
               type="button"
-              onClick={() => setActivePanel("tasks")}
+              onClick={() => openPanel("calendar")}
+              className={`${navButtonClass("calendar")} rounded-2xl py-3 font-semibold`}
+            >
+              Kalender
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openPanel("tasks")}
               className={`${navButtonClass("tasks")} rounded-2xl py-3 font-semibold`}
             >
               Aufgaben
             </button>
           </div>
         </div>
+
+        {activePanel === "dashboard" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <button
+                onClick={() => openPanel("tasks")}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-left"
+              >
+                <p className="text-zinc-400">Offen</p>
+                <h2 className="text-5xl font-bold mt-2">{openCount}</h2>
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuickFilter("Heute");
+                  openPanel("tasks");
+                }}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-left"
+              >
+                <p className="text-zinc-400">Heute</p>
+                <h2 className="text-5xl font-bold mt-2">{todayCount}</h2>
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuickFilter("Alle");
+                  openPanel("tasks");
+                }}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-left"
+              >
+                <p className="text-zinc-400">Morgen</p>
+                <h2 className="text-5xl font-bold mt-2">{tomorrowCount}</h2>
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuickFilter("Dateien");
+                  openPanel("tasks");
+                }}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-left"
+              >
+                <p className="text-zinc-400">Dateien</p>
+                <h2 className="text-5xl font-bold mt-2">{fileCount}</h2>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                onClick={() => openPanel("quick")}
+                className="bg-white text-black rounded-3xl p-6 text-left font-bold text-2xl"
+              >
+                + Neue Aufgabe
+              </button>
+
+              <button
+                onClick={() => openPanel("files")}
+                className="bg-blue-700 rounded-3xl p-6 text-left font-bold text-2xl"
+              >
+                Kamera / PDF erfassen
+              </button>
+
+              <button
+                onClick={requestNotificationPermission}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 text-left font-bold text-2xl"
+              >
+                Push testen
+              </button>
+
+              <button
+                onClick={() => openPanel("calendar")}
+                className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 text-left font-bold text-2xl"
+              >
+                Kalender öffnen
+              </button>
+            </div>
+
+            <p className="text-blue-300">Status: {statusText}</p>
+          </div>
+        )}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-6">
           <input
@@ -934,20 +1058,45 @@ export default function Home() {
         {activePanel === "files" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-6">
             <h2 className="text-2xl md:text-3xl font-bold mb-2">
-              Dateien / Bilder / PDFs
+              Kamera / Dateien / PDFs
             </h2>
+
             <p className="text-zinc-400 mb-5">
-              PDFs werden serverseitig ausgelesen. Bilder sind vorbereitet,
-              echte Bild-OCR folgt später.
+              Am Handy kann direkt die Kamera geöffnet werden. PDFs werden
+              serverseitig ausgelesen. Foto-OCR ist vorbereitet, echte Bild-OCR
+              folgt im nächsten KI-Schritt.
             </p>
 
             <input
+              ref={cameraInputRef}
               type="file"
-              multiple
               accept="image/*,.pdf"
+              capture="environment"
+              multiple
               onChange={(event) => handleFileUpload(event.target.files)}
-              className="block w-full bg-black border border-zinc-800 rounded-xl p-4"
+              className="hidden"
             />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="bg-white text-black rounded-3xl p-6 font-bold text-xl"
+              >
+                Kamera öffnen / Zettel scannen
+              </button>
+
+              <label className="bg-blue-700 rounded-3xl p-6 font-bold text-xl text-center cursor-pointer">
+                PDF / Datei wählen
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf"
+                  onChange={(event) => handleFileUpload(event.target.files)}
+                  className="hidden"
+                />
+              </label>
+            </div>
 
             {analysisStatus && (
               <p className="text-blue-300 mt-4">{analysisStatus}</p>
@@ -992,6 +1141,42 @@ export default function Home() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activePanel === "calendar" && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-6">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">Kalender</h2>
+
+            <p className="text-zinc-400 mb-5">
+              Termine und Aufgaben mit Datum/Uhrzeit können als Kalendereintrag
+              exportiert werden.
+            </p>
+
+            <div className="space-y-4">
+              {tasks
+                .filter((task) => task.time !== "Keine Uhrzeit")
+                .map((task) => (
+                  <div
+                    key={task.id}
+                    className="bg-black border border-zinc-800 rounded-2xl p-4 flex flex-col md:flex-row justify-between gap-4"
+                  >
+                    <div>
+                      <h3 className="text-xl font-bold">{task.title}</h3>
+                      <p className="text-zinc-400">
+                        {task.date} • {task.time} • {task.location}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => createCalendarFile(task)}
+                      className="bg-green-700 px-5 py-3 rounded-xl font-semibold"
+                    >
+                      Zum Kalender
+                    </button>
+                  </div>
+                ))}
+            </div>
           </div>
         )}
 
@@ -1063,6 +1248,13 @@ export default function Home() {
                 value={manualLocation}
                 onChange={(event) => setManualLocation(event.target.value)}
               />
+
+              <textarea
+                className="bg-black border border-zinc-800 rounded-xl p-4 md:col-span-2"
+                placeholder="Notiz"
+                value={manualNote}
+                onChange={(event) => setManualNote(event.target.value)}
+              />
             </div>
 
             <button
@@ -1098,27 +1290,6 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-            <p className="text-zinc-400">Gesamt</p>
-            <h2 className="text-5xl font-bold mt-2">{tasks.length}</h2>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-            <p className="text-zinc-400">Offen</p>
-            <h2 className="text-5xl font-bold mt-2">
-              {tasks.filter((task) => !task.completed).length}
-            </h2>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-            <p className="text-zinc-400">Erledigt</p>
-            <h2 className="text-5xl font-bold mt-2">
-              {tasks.filter((task) => task.completed).length}
-            </h2>
-          </div>
-        </div>
-
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-6">
           <p className="text-zinc-400 mb-4">Projektfilter</p>
 
@@ -1139,183 +1310,249 @@ export default function Home() {
           </div>
         </div>
 
-        {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
-          if (groupTasks.length === 0) return null;
+        {activePanel === "tasks" && (
+          <>
+            {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
+              if (groupTasks.length === 0) return null;
 
-          return (
-            <div
-              key={groupName}
-              className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-8"
-            >
-              <h2 className="text-4xl md:text-5xl font-bold">{groupName}</h2>
+              return (
+                <div
+                  key={groupName}
+                  className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 md:p-8"
+                >
+                  <h2 className="text-4xl md:text-5xl font-bold">{groupName}</h2>
 
-              <p className="text-zinc-400 mt-2 mb-6">
-                {groupTasks.length} Aufgabe(n)
-              </p>
+                  <p className="text-zinc-400 mt-2 mb-6">
+                    {groupTasks.length} Aufgabe(n)
+                  </p>
 
-              <div className="space-y-5">
-                {groupTasks.map((task) => {
-                  const expanded = expandedId === task.id;
-                  const editing = editingId === task.id;
+                  <div className="space-y-5">
+                    {groupTasks.map((task) => {
+                      const expanded = expandedId === task.id;
+                      const editing = editingId === task.id;
 
-                  return (
-                    <div
-                      key={task.id}
-                      className={`border rounded-3xl p-4 md:p-6 transition-all ${getCardStyle(
-                        task.priority,
-                        task.completed
-                      )}`}
-                    >
-                      <div className="flex flex-col md:flex-row justify-between gap-6">
-                        <div className="flex gap-5 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={task.completed}
-                            onChange={() => toggleCompleted(task.id)}
-                            className="mt-2 w-6 h-6 accent-green-500"
-                          />
+                      return (
+                        <div
+                          key={task.id}
+                          className={`border rounded-3xl p-4 md:p-6 transition-all ${getCardStyle(
+                            task.priority,
+                            task.completed
+                          )}`}
+                        >
+                          <div className="flex flex-col md:flex-row justify-between gap-6">
+                            <div className="flex gap-5 flex-1">
+                              <input
+                                type="checkbox"
+                                checked={task.completed}
+                                onChange={() => toggleCompleted(task.id)}
+                                className="mt-2 w-6 h-6 accent-green-500"
+                              />
 
-                          <div className="flex-1">
-                            {editing ? (
-                              <div className="space-y-3">
-                                <textarea
-                                  value={editTitle}
-                                  onChange={(event) =>
-                                    setEditTitle(event.target.value)
-                                  }
-                                  className="w-full h-28 bg-black border border-zinc-700 rounded-2xl p-4"
-                                />
+                              <div className="flex-1">
+                                {editing ? (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <textarea
+                                      value={editTitle}
+                                      onChange={(event) =>
+                                        setEditTitle(event.target.value)
+                                      }
+                                      className="md:col-span-2 w-full h-24 bg-black border border-zinc-700 rounded-2xl p-4"
+                                    />
 
-                                <div className="flex gap-3 flex-wrap">
-                                  <button
-                                    onClick={() => saveEdit(task.id)}
-                                    className="bg-green-600 px-5 py-2 rounded-xl font-semibold"
-                                  >
-                                    Speichern
-                                  </button>
+                                    <input
+                                      value={editDate}
+                                      onChange={(event) =>
+                                        setEditDate(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    />
 
-                                  <button
-                                    onClick={cancelEdit}
-                                    className="bg-zinc-700 px-5 py-2 rounded-xl font-semibold"
-                                  >
-                                    Abbrechen
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <h3
-                                  className={`text-2xl md:text-3xl font-bold ${
-                                    task.completed
-                                      ? "line-through text-zinc-500"
-                                      : ""
-                                  }`}
-                                >
-                                  {task.title}
-                                </h3>
+                                    <input
+                                      value={editTime}
+                                      onChange={(event) =>
+                                        setEditTime(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    />
 
-                                <p className="text-zinc-400 mt-2">
-                                  {task.date} • {task.time} • {task.project} •{" "}
-                                  <span className={getPriorityColor(task.priority)}>
-                                    {task.priority}
-                                  </span>
-                                </p>
-                              </>
-                            )}
+                                    <select
+                                      value={editProject}
+                                      onChange={(event) =>
+                                        setEditProject(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    >
+                                      {customProjects.map((project) => (
+                                        <option key={project}>{project}</option>
+                                      ))}
+                                    </select>
 
-                            {expanded && !editing && (
-                              <div className="mt-5 space-y-2 text-lg md:text-xl">
-                                <p>Aktion: {task.action}</p>
-                                <p>Kontakt: {task.person}</p>
-                                <p>Ort: {task.location}</p>
+                                    <select
+                                      value={editPriority}
+                                      onChange={(event) =>
+                                        setEditPriority(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    >
+                                      <option>Normal</option>
+                                      <option>Mittel</option>
+                                      <option>Hoch</option>
+                                    </select>
 
-                                {task.fileName && <p>Datei: {task.fileName}</p>}
+                                    <input
+                                      value={editPerson}
+                                      onChange={(event) =>
+                                        setEditPerson(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    />
 
-                                {task.company !== "Keine Firma" &&
-                                  (task.action.includes("Rechnung") ||
-                                    task.action.includes("Angebot") ||
-                                    task.action.includes("Datei")) && (
-                                    <p>Firma: {task.company}</p>
-                                  )}
+                                    <input
+                                      value={editLocation}
+                                      onChange={(event) =>
+                                        setEditLocation(event.target.value)
+                                      }
+                                      className="bg-black border border-zinc-700 rounded-xl p-3"
+                                    />
 
-                                {task.analysisNote && (
-                                  <p className="text-blue-300">
-                                    Analyse: {task.analysisNote}
-                                  </p>
+                                    <textarea
+                                      value={editNote}
+                                      onChange={(event) =>
+                                        setEditNote(event.target.value)
+                                      }
+                                      className="md:col-span-2 bg-black border border-zinc-700 rounded-xl p-3"
+                                      placeholder="Notiz"
+                                    />
+
+                                    <div className="md:col-span-2 flex gap-3 flex-wrap">
+                                      <button
+                                        onClick={() => saveEdit(task.id)}
+                                        className="bg-green-600 px-5 py-2 rounded-xl font-semibold"
+                                      >
+                                        Speichern
+                                      </button>
+
+                                      <button
+                                        onClick={cancelEdit}
+                                        className="bg-zinc-700 px-5 py-2 rounded-xl font-semibold"
+                                      >
+                                        Abbrechen
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <h3
+                                      className={`text-2xl md:text-3xl font-bold ${
+                                        task.completed
+                                          ? "line-through text-zinc-500"
+                                          : ""
+                                      }`}
+                                    >
+                                      {task.title}
+                                    </h3>
+
+                                    <p className="text-zinc-400 mt-2">
+                                      {task.date} • {task.time} • {task.project} •{" "}
+                                      <span
+                                        className={getPriorityColor(task.priority)}
+                                      >
+                                        {task.priority}
+                                      </span>
+                                    </p>
+                                  </>
                                 )}
 
-                                {task.extractedText && (
-                                  <details className="mt-4">
-                                    <summary className="cursor-pointer text-green-400">
-                                      Ausgelesenen PDF-Text anzeigen
-                                    </summary>
-                                    <pre className="mt-3 whitespace-pre-wrap text-sm bg-zinc-950 border border-zinc-800 rounded-2xl p-4 max-h-80 overflow-auto">
-                                      {task.extractedText}
-                                    </pre>
-                                  </details>
-                                )}
+                                {expanded && !editing && (
+                                  <div className="mt-5 space-y-2 text-lg md:text-xl">
+                                    <p>Aktion: {task.action}</p>
+                                    <p>Kontakt: {task.person}</p>
+                                    <p>Ort: {task.location}</p>
 
-                                <p>
-                                  Status: {task.completed ? "erledigt" : "offen"}
-                                </p>
+                                    {task.note && <p>Notiz: {task.note}</p>}
+
+                                    {task.fileName && (
+                                      <p>Datei: {task.fileName}</p>
+                                    )}
+
+                                    {task.analysisNote && (
+                                      <p className="text-blue-300">
+                                        Analyse: {task.analysisNote}
+                                      </p>
+                                    )}
+
+                                    {task.extractedText && (
+                                      <details className="mt-4">
+                                        <summary className="cursor-pointer text-green-400">
+                                          Ausgelesenen PDF-Text anzeigen
+                                        </summary>
+                                        <pre className="mt-3 whitespace-pre-wrap text-sm bg-zinc-950 border border-zinc-800 rounded-2xl p-4 max-h-80 overflow-auto">
+                                          {task.extractedText}
+                                        </pre>
+                                      </details>
+                                    )}
+
+                                    <p>
+                                      Status:{" "}
+                                      {task.completed ? "erledigt" : "offen"}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                            )}
+                            </div>
+
+                            <div className="flex flex-row md:flex-col flex-wrap gap-3 text-left md:text-right">
+                              <button
+                                onClick={() => startEdit(task)}
+                                className="text-purple-400"
+                              >
+                                Bearbeiten
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  setExpandedId(expanded ? null : task.id)
+                                }
+                                className="text-blue-400"
+                              >
+                                {expanded ? "Weniger" : "Details"}
+                              </button>
+
+                              <button
+                                onClick={() => createCalendarFile(task)}
+                                className="text-green-400"
+                              >
+                                Kalender
+                              </button>
+
+                              <button
+                                onClick={() => toggleCompleted(task.id)}
+                                className="text-yellow-400"
+                              >
+                                Status wechseln
+                              </button>
+
+                              <button
+                                onClick={() => deleteTask(task.id)}
+                                className="text-red-400"
+                              >
+                                Löschen
+                              </button>
+                            </div>
                           </div>
                         </div>
-
-                        <div className="flex flex-row md:flex-col flex-wrap gap-3 text-left md:text-right">
-                          <button
-                            onClick={() => startEdit(task)}
-                            className="text-purple-400"
-                          >
-                            Bearbeiten
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              setExpandedId(expanded ? null : task.id)
-                            }
-                            className="text-blue-400"
-                          >
-                            {expanded ? "Weniger" : "Details"}
-                          </button>
-
-                          <button
-                            onClick={() => createCalendarFile(task)}
-                            className="text-green-400"
-                          >
-                            Kalender
-                          </button>
-
-                          <button
-                            onClick={() => toggleCompleted(task.id)}
-                            className="text-yellow-400"
-                          >
-                            Status wechseln
-                          </button>
-
-                          <button
-                            onClick={() => deleteTask(task.id)}
-                            className="text-red-400"
-                          >
-                            Löschen
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
 
         <button
           type="button"
-          onClick={() => {
-            setActivePanel("quick");
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
+          onClick={() => openPanel("quick")}
           className="fixed bottom-6 right-6 z-50 bg-white text-black w-16 h-16 rounded-full text-4xl font-bold shadow-xl active:scale-95 md:hidden"
         >
           +
