@@ -1,11 +1,28 @@
 {
   "name": "LifeSort Mini",
   "short_name": "LifeSort",
-  "description": "KI organisiert dein Chaos.",
+  "description": "Mobile Aufgaben- und Projektverwaltung",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
   "orientation": "portrait",
-  "icons": []
+  "icons": [
+    {
+      "src": "/icons/lifesort-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/lifesort-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/lifesort-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
